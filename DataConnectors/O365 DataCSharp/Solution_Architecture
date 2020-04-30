@@ -1,0 +1,61 @@
+Solution Architecture
+
+Teams Custom Connector - Architecture
+
+This solution provides an effective way to onboard Office 365 Teams Activity Logs to Azure Sentinel using Azure and O365 features. The architecture below describes the solution and the flow of logs from Office 365 to Azure Sentinel workspace.
+
+The 'Teams' custom data connector allows you to easily connect your 'Microsoft Teams' logs with Azure Sentinel, to view dashboards, create custom alerts, and improve investigation. 
+1)	All user & admin activity in teams is logged into Audit.General
+2)	O365 Management API can poll O365 Teams logs stored as Audit.General. 
+3)	Function App calls O365 Management API to pull logs from O365 Teams blob and dumps into Azure Storage Container. The Apps client and tenant secrets, to access O365 are stored in Key Vault.
+4)	Logic Apps, triggered every 5 mins, reads container blob contents and ingest these logs into Sentinel workspace.
+
+Teams Custom Connector - Components
+
+As mentioned in the above section, the custom connector setup consists of 7 sub-components that are:
+1)	Office 365 Activity Logs
+2)	Office 365 Management API
+3)	Azure Function App
+4)	Azure Logic App
+5)	Azure Storage
+6)	Sentinel Log Analytic Workspace
+7)	Azure Key Vault
+Office 365 Activity Logs:
+Office 365 include several auditing and reporting features you can use to track user and administrative activity within their tenant. 
+To store this user and admin activity in Office 365 Audit logs, you (or another admin) must turn on audit logging before you can start searching the Office 365 audit log. When audit log search in the Security & Compliance Center is turned on, user and admin activity from your organization is recorded in the audit log and retained for 90 days.
+Office 365 Management API:
+The Office 365 Management Activity API provides information about various user, admin, system, and policy actions and events from Office 365 activity logs. The Office 365 Management Activity API uses an industry-standard RESTful design and OAuth v2 for authentication. The API provides a consistent audit schema with over 10 fields common across all the services.
+The Office 365 Management Activity API aggregates actions and events into tenant-specific content blobs, which are classified by the type and source of the content they contain. 
+We are interested in the following content type, which stores events for Microsoft Teams
+	Audit.General (includes all other workloads not included in the previous content types)
+
+Azure Function App:
+Azure Functions allows you to run small pieces of code (called "functions") without worrying about application infrastructure. A function is "triggered" by a specific type of event. 
+This 'Function' is triggered on a specific schedule (time trigger), i.e. every 10 mins. However this time trigger can be modified, to run at a different schedule, based on your organizational requirement. Function code and associated files can be found <here>
+
+
+Azure Logic App:
+Azure Logic Apps helps to schedule, automate, and orchestrate tasks, business processes, and workflows when you need to integrate apps, data, systems, and services across enterprises or organizations. ‘Logic Apps’ can also be time triggered. We are scheduled our Logic App to run every 5 minutes.  
+Our setup uses "Logic App" to achieve 2 purpose:
+1)	It lists the blob contents in Storage Account and identifies the last timestamp log file
+2)	Copies the blob contents from the latest blob to sentinel workspace
+Here is a screenshot of the “Logic App” in our setup
+
+Azure Blob Storage:
+Azure Blob storage is object storage solution optimized for storing massive amounts of unstructured data. Unstructured data doesn't adhere to a particular data model or definition, such as text or binary data. 
+We are using blob containers as staging location for logs, before they are ingested into Sentinel workspace.  ‘Teams’ Activity Logs from Office 365 are dumped into Blob Containers by Azure Function. Below is a list of blob containers under the storage account and their purpose
+
+1)	Archive – Acts as an archive location for storing all logs that has been ingested into sentinel workspace already. 
+2)	Data – Contain logs that are yet to be ingested into sentinel workspace.
+3)	Logs – Contain a single .txt file with timestamp of the last log ingestion in sentinel workspace. Azure Logic App, when triggered, reads the timestamp .txt file, before pulling recent logs from Data container to sentinel workspace
+
+Sentinel Log Analytic Workspace
+A Log Analytics workspace is a unique environment for log data. Each workspace has its own data repository and configuration, and data sources and solutions are configured to store their data in a particular workspace. 
+Various data sources whether out of the box connectors or custom connectors, ingest data directly into workspace, which is then used by Sentinel to perform analysis.
+As stated before, Azure Logic App, copies logs from “Data” Container to Sentinel Workspace.
+
+Azure Key Vault
+With using Key Vault, the function app, no longer need to store security information in its code. The function app can securely access the information they need by using URIs.
+For this you need to have your own custom application identity, or “service principal”, which can be used to access the secret, stored in Key Vault. Two types of secret used here are:
+1)	Client Secret
+2)	Tenant ID Secret
